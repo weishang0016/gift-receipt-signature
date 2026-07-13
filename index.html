@@ -190,7 +190,6 @@
 const CONFIG = Object.freeze({
   MODE: "application",
   INSTITUTION: "國立臺灣大學醫學院附設醫院",
-  PROJECT_NAME: "運動員認同感與醫學生選科意願的關聯性",
   REASON: "參與問卷調查研究並完成問卷",
   AMOUNT_NTD: 200,
   ANNUAL_THRESHOLD_NTD: 1000,
@@ -240,7 +239,6 @@ function setupText() {
   document.getElementById("title").textContent = pageTitle();
   document.getElementById("meta").textContent =
     `機構：${CONFIG.INSTITUTION}\n` +
-    `研究計畫：${CONFIG.PROJECT_NAME}\n` +
     `領取事由：${CONFIG.REASON}\n` +
     `數位禮券金額：新臺幣 ${formatNumber(CONFIG.AMOUNT_NTD)} 元`;
   document.getElementById("declaration").textContent = declarationText();
@@ -387,7 +385,6 @@ function createReceiptImage() {
   const lineHeight = 34;
 
   y = wrapText(out, `機構：${CONFIG.INSTITUTION}`, left, y, contentWidth, lineHeight);
-  y = wrapText(out, `研究計畫：${CONFIG.PROJECT_NAME}`, left, y, contentWidth, lineHeight);
   y = wrapText(out, `領取事由：${CONFIG.REASON}`, left, y, contentWidth, lineHeight);
   y = wrapText(out, `禮券金額：新臺幣 ${formatNumber(CONFIG.AMOUNT_NTD)} 元`, left, y, contentWidth, lineHeight);
 
