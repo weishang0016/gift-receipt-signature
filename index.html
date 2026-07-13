@@ -442,38 +442,117 @@ function createReceiptImage() {
   return cropped;
 }
 
-function downloadReceipt() {
+async function downloadReceipt() {
   hideStatus();
 
   if (!hasInk) {
     showStatus("請先在簽名區完成手寫簽名。", "error");
     return;
   }
+
   if (!agree.checked) {
     showStatus("請先勾選聲明確認欄位。", "error");
     agree.focus();
     return;
   }
 
-  const receiptCanvas = createReceiptImage();
-  receiptCanvas.toBlob(blob => {
+  let receiptCanvas;
+
+  try {
+    receiptCanvas = createReceiptImage();
+  } catch (error) {
+    showStatus("無法產生圖檔，請重新整理後再試一次。", "error");
+    return;
+  }
+
+  receiptCanvas.toBlob(async blob => {
     if (!blob) {
       showStatus("無法產生圖檔，請重新整理後再試一次。", "error");
       return;
     }
 
-    const modeName = CONFIG.MODE === "receipt" ? "收訖確認" : "申領簽署";
-    const date = new Date().toISOString().slice(0, 10).replaceAll("-", "");
-    const filename = `數位禮券_${modeName}_${date}.png`;
+    const modeName =
+      CONFIG.MODE === "receipt" ? "收訖確認" : "申領簽署";
 
+    const date = new Date()
+      .toISOString()
+      .slice(0, 10)
+      .replace(/-/g, "");
+
+    const filename =
+      `數位禮券_${modeName}_${date}.png`;
+
+    /*
+     * Android Chrome、Samsung Internet 與部分 App 內建瀏覽器，
+     * 優先使用系統分享／儲存功能。
+     */
+    const isAndroid =
+      /Android/i.test(navigator.userAgent);
+
+    if (isAndroid) {
+      try {
+        const file = new File(
+          [blob],
+          filename,
+          { type: "image/png" }
+        );
+
+        if (
+          typeof navigator.share === "function" &&
+          typeof navigator.canShare === "function" &&
+          navigator.canShare({ files: [file] })
+        ) {
+          await navigator.share({
+            files: [file],
+            title: filename
+          });
+
+          showStatus(
+            `圖檔已產生：${filename}\n請回到研究團隊提供的 Google 表單上傳此檔案。`,
+            "success"
+          );
+
+          return;
+        }
+      } catch (error) {
+        /*
+         * 如果使用者關閉分享視窗，不自動下載，
+         * 避免在使用者取消後又產生另一個檔案。
+         */
+        if (error && error.name === "AbortError") {
+          return;
+        }
+
+        /*
+         * 如果瀏覽器不支援系統分享，
+         * 繼續執行下方的一般下載方式。
+         */
+      }
+    }
+
+    /*
+     * 電腦、iPhone或不支援檔案分享的瀏覽器，
+     * 使用原本的一般下載方式。
+     */
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
+
     link.href = url;
     link.download = filename;
+    link.style.display = "none";
+    link.rel = "noopener";
+
     document.body.appendChild(link);
     link.click();
     link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+    /*
+     * 原本是1秒。改成60秒，
+     * 避免Android尚未取得檔案時網址已被清除。
+     */
+    setTimeout(() => {
+      URL.revokeObjectURL(url);
+    }, 60000);
 
     showStatus(
       `圖檔已產生：${filename}\n請回到研究團隊提供的 Google 表單上傳此檔案。`,
