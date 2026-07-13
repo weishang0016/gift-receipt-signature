@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>數位禮券簽領文件產生器</title>
+  <style>
+    :root {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+        "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+      color-scheme: light;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #f5f6f8;
+      color: #202124;
+    }
+    main {
+      width: min(760px, calc(100% - 24px));
+      margin: 24px auto 48px;
+    }
+    .card {
+      background: #fff;
+      border: 1px solid #dadce0;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 1px 2px rgba(60,64,67,.08);
+    }
+    h1 {
+      margin: 0 0 14px;
+      font-size: 1.45rem;
+      line-height: 1.4;
+    }
+    h2 {
+      margin: 22px 0 10px;
+      font-size: 1.05rem;
+    }
+    .meta, .notice, .declaration {
+      line-height: 1.75;
+      white-space: pre-wrap;
+    }
+    .meta {
+      background: #f8f9fa;
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .notice {
+      margin: 14px 0;
+      padding: 12px;
+      background: #eef3fd;
+      border-radius: 8px;
+      font-size: .94rem;
+    }
+    .declaration {
+      margin: 12px 0;
+      padding: 12px;
+      border: 1px solid #dadce0;
+      border-radius: 8px;
+    }
+    .signature-wrap {
+      border: 1px solid #9aa0a6;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fff;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 220px;
+      touch-action: none;
+      cursor: crosshair;
+    }
+    .canvas-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      padding: 8px;
+      border-top: 1px solid #dadce0;
+      background: #f8f9fa;
+    }
+    label.confirm {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin: 18px 0;
+      line-height: 1.65;
+    }
+    label.confirm input {
+      margin-top: 5px;
+      transform: scale(1.15);
+    }
+    button {
+      min-height: 44px;
+      border: 0;
+      border-radius: 8px;
+      padding: 10px 16px;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+    .secondary {
+      background: #e8eaed;
+      color: #202124;
+    }
+    .primary {
+      width: 100%;
+      background: #1a73e8;
+      color: #fff;
+      font-weight: 700;
+    }
+    .primary:disabled {
+      background: #9aa0a6;
+      cursor: not-allowed;
+    }
+    .status {
+      display: none;
+      margin-top: 14px;
+      padding: 12px;
+      border-radius: 8px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+    }
+    .status.error {
+      display: block;
+      background: #fce8e6;
+      color: #b3261e;
+    }
+    .status.success {
+      display: block;
+      background: #e6f4ea;
+      color: #137333;
+    }
+    .fineprint {
+      margin-top: 16px;
+      color: #5f6368;
+      font-size: .86rem;
+      line-height: 1.65;
+    }
+  </style>
+</head>
+<body>
+<main>
+  <section class="card">
+    <h1 id="title"></h1>
+
+    <div id="meta" class="meta"></div>
+
+    <div class="notice">
+      本頁只在目前裝置內產生電子簽名圖檔，不會把簽名、電子郵件或其他資料傳送到網站伺服器。
+      下載完成後，請回到研究團隊提供的 Google 表單，上傳本頁產生的 PNG 檔案。
+    </div>
+
+    <h2>簽署聲明</h2>
+    <div id="declaration" class="declaration"></div>
+
+    <h2>領取人手寫簽名</h2>
+    <div class="signature-wrap">
+      <canvas id="signatureCanvas" aria-label="手寫簽名區"></canvas>
+      <div class="canvas-actions">
+        <button type="button" id="clearButton" class="secondary">清除重簽</button>
+      </div>
+    </div>
+
+    <label class="confirm">
+      <input type="checkbox" id="agree">
+      <span id="confirmText"></span>
+    </label>
+
+    <button type="button" id="downloadButton" class="primary">產生並下載簽領圖檔</button>
+
+    <div id="status" class="status" role="status" aria-live="polite"></div>
+
+    <div class="fineprint">
+      本頁不使用分析追蹤、Cookie、外部字型、第三方 JavaScript 或資料庫。
+      網站原始碼可公開檢視，但簽名不會被網站保存。
+    </div>
+  </section>
+</main>
+
+<script>
+/*
+ * 修改這裡即可調整正式文字。
+ * MODE 可設為：
+ * - "application"：問卷完成後申領數位禮券。此模式不代表已收到禮券。
+ * - "receipt"：數位禮券寄出後，確認實際收到。
+ *
+ * 行政單位若要求「已領取」後才能簽名，請使用 receipt 模式。
+ */
+const CONFIG = Object.freeze({
+  MODE: "application",
+  INSTITUTION: "國立臺灣大學醫學院附設醫院",
+  PROJECT_NAME: "運動員認同感與醫學生選科意願的關聯性",
+  REASON: "參與問卷調查研究並完成問卷",
+  AMOUNT_NTD: 200,
+  ANNUAL_THRESHOLD_NTD: 1000,
+
+  APPLICATION_DECLARATION:
+    "本人聲明，本人於本年度受領臺大醫院禮券（品）金額合計未達新臺幣{{threshold}}元，" +
+    "並基於個人隱私不願提供身分證字號及戶籍地址。本人確認所填學校電子郵件為數位禮券寄送地址，" +
+    "並申請受領本研究提供之新臺幣{{amount}}元數位禮券。",
+
+  RECEIPT_DECLARATION:
+    "本人聲明，本人於本年度受領臺大醫院禮券（品）金額合計未達新臺幣{{threshold}}元，" +
+    "並基於個人隱私不願提供身分證字號及戶籍地址。本人確認已收到本研究提供之新臺幣{{amount}}元數位禮券。"
+});
+
+const canvas = document.getElementById("signatureCanvas");
+const clearButton = document.getElementById("clearButton");
+const downloadButton = document.getElementById("downloadButton");
+const agree = document.getElementById("agree");
+const statusBox = document.getElementById("status");
+
+let ctx;
+let drawing = false;
+let hasInk = false;
+let lastPoint = null;
+
+function formatNumber(value) {
+  return Number(value).toLocaleString("zh-TW");
+}
+
+function declarationText() {
+  const source = CONFIG.MODE === "receipt"
+    ? CONFIG.RECEIPT_DECLARATION
+    : CONFIG.APPLICATION_DECLARATION;
+
+  return source
+    .replace("{{threshold}}", formatNumber(CONFIG.ANNUAL_THRESHOLD_NTD))
+    .replace("{{amount}}", formatNumber(CONFIG.AMOUNT_NTD));
+}
+
+function pageTitle() {
+  return CONFIG.MODE === "receipt"
+    ? "數位禮券收訖確認"
+    : "數位禮券申領簽署";
+}
+
+function setupText() {
+  document.getElementById("title").textContent = pageTitle();
+  document.getElementById("meta").textContent =
+    `機構：${CONFIG.INSTITUTION}\n` +
+    `研究計畫：${CONFIG.PROJECT_NAME}\n` +
+    `領取事由：${CONFIG.REASON}\n` +
+    `數位禮券金額：新臺幣 ${formatNumber(CONFIG.AMOUNT_NTD)} 元`;
+  document.getElementById("declaration").textContent = declarationText();
+  document.getElementById("confirmText").textContent =
+    CONFIG.MODE === "receipt"
+      ? "我已閱讀並確認上列聲明，且確認已收到所載數位禮券。"
+      : "我已閱讀並確認上列聲明，並申請將數位禮券寄送至我在簽領表單填寫的學校電子郵件。";
+}
+
+function resizeCanvas() {
+  const rect = canvas.getBoundingClientRect();
+  const ratio = Math.max(window.devicePixelRatio || 1, 1);
+  const snapshot = hasInk ? canvas.toDataURL("image/png") : null;
+
+  canvas.width = Math.round(rect.width * ratio);
+  canvas.height = Math.round(rect.height * ratio);
+
+  ctx = canvas.getContext("2d");
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.lineWidth = 2.2;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = "#111";
+
+  if (snapshot) {
+    const img = new Image();
+    img.onload = () => ctx.drawImage(img, 0, 0, rect.width, rect.height);
+    img.src = snapshot;
+  }
+}
+
+function pointFromEvent(event) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: event.clientX - rect.left,
+    y: event.clientY - rect.top
+  };
+}
+
+function startDrawing(event) {
+  event.preventDefault();
+  drawing = true;
+  lastPoint = pointFromEvent(event);
+  canvas.setPointerCapture(event.pointerId);
+
+  ctx.beginPath();
+  ctx.arc(lastPoint.x, lastPoint.y, 1.1, 0, Math.PI * 2);
+  ctx.fillStyle = "#111";
+  ctx.fill();
+  hasInk = true;
+}
+
+function draw(event) {
+  if (!drawing) return;
+  event.preventDefault();
+
+  const point = pointFromEvent(event);
+  ctx.beginPath();
+  ctx.moveTo(lastPoint.x, lastPoint.y);
+  ctx.lineTo(point.x, point.y);
+  ctx.stroke();
+
+  lastPoint = point;
+  hasInk = true;
+}
+
+function stopDrawing(event) {
+  if (!drawing) return;
+  event.preventDefault();
+  drawing = false;
+  lastPoint = null;
+  try { canvas.releasePointerCapture(event.pointerId); } catch (_) {}
+}
+
+function clearSignature() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  hasInk = false;
+  hideStatus();
+}
+
+function showStatus(message, type) {
+  statusBox.textContent = message;
+  statusBox.className = `status ${type}`;
+  statusBox.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function hideStatus() {
+  statusBox.textContent = "";
+  statusBox.className = "status";
+}
+
+function wrapText(context, text, x, y, maxWidth, lineHeight) {
+  const paragraphs = String(text).split("\n");
+  let cursorY = y;
+
+  for (const paragraph of paragraphs) {
+    const chars = Array.from(paragraph);
+    let line = "";
+
+    for (const ch of chars) {
+      const testLine = line + ch;
+      if (context.measureText(testLine).width > maxWidth && line) {
+        context.fillText(line, x, cursorY);
+        line = ch;
+        cursorY += lineHeight;
+      } else {
+        line = testLine;
+      }
+    }
+
+    if (line) {
+      context.fillText(line, x, cursorY);
+      cursorY += lineHeight;
+    }
+    cursorY += 8;
+  }
+  return cursorY;
+}
+
+function createReceiptImage() {
+  const scale = 2;
+  const width = 900;
+  const output = document.createElement("canvas");
+  output.width = width * scale;
+  output.height = 1300 * scale;
+
+  const out = output.getContext("2d");
+  out.scale(scale, scale);
+
+  out.fillStyle = "#fff";
+  out.fillRect(0, 0, width, 1300);
+
+  out.fillStyle = "#111";
+  out.textAlign = "center";
+  out.font = '700 30px "Noto Sans TC", "Microsoft JhengHei", sans-serif';
+  out.fillText(pageTitle(), width / 2, 58);
+
+  out.textAlign = "left";
+  out.font = '20px "Noto Sans TC", "Microsoft JhengHei", sans-serif';
+
+  let y = 110;
+  const left = 70;
+  const contentWidth = width - 140;
+  const lineHeight = 34;
+
+  y = wrapText(out, `機構：${CONFIG.INSTITUTION}`, left, y, contentWidth, lineHeight);
+  y = wrapText(out, `研究計畫：${CONFIG.PROJECT_NAME}`, left, y, contentWidth, lineHeight);
+  y = wrapText(out, `領取事由：${CONFIG.REASON}`, left, y, contentWidth, lineHeight);
+  y = wrapText(out, `禮券金額：新臺幣 ${formatNumber(CONFIG.AMOUNT_NTD)} 元`, left, y, contentWidth, lineHeight);
+
+  y += 15;
+  out.strokeStyle = "#bbb";
+  out.beginPath();
+  out.moveTo(left, y);
+  out.lineTo(width - left, y);
+  out.stroke();
+
+  y += 45;
+  out.font = '20px "Noto Sans TC", "Microsoft JhengHei", sans-serif';
+  y = wrapText(out, declarationText(), left, y, contentWidth, 36);
+
+  y += 20;
+  out.font = '700 20px "Noto Sans TC", "Microsoft JhengHei", sans-serif';
+  out.fillText("領取人手寫簽名：", left, y);
+
+  y += 20;
+  out.strokeStyle = "#888";
+  out.strokeRect(left, y, contentWidth, 280);
+
+  // 將目前簽名畫布放到文件中。
+  out.drawImage(canvas, left + 15, y + 15, contentWidth - 30, 250);
+
+  y += 330;
+  out.font = '18px "Noto Sans TC", "Microsoft JhengHei", sans-serif';
+  const nowText = new Intl.DateTimeFormat("zh-TW", {
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+    hour12: false
+  }).format(new Date());
+
+  out.fillText(`簽署時間（受領人裝置）：${nowText}`, left, y);
+  y += 45;
+  out.fillText("計畫主持人核章：____________________________", left, y);
+
+  y += 70;
+  out.fillStyle = "#555";
+  out.font = '15px "Noto Sans TC", "Microsoft JhengHei", sans-serif';
+  y = wrapText(
+    out,
+    "本圖檔由受領人裝置端產生。簽名頁本身不會將資料傳送至網站伺服器；" +
+    "受領人另行將本圖檔上傳至研究團隊指定的簽領表單。",
+    left, y, contentWidth, 25
+  );
+
+  // 裁切多餘底部空白。
+  const cropped = document.createElement("canvas");
+  cropped.width = output.width;
+  cropped.height = Math.min(output.height, Math.ceil((y + 35) * scale));
+  const cropCtx = cropped.getContext("2d");
+  cropCtx.drawImage(output, 0, 0);
+
+  return cropped;
+}
+
+function downloadReceipt() {
+  hideStatus();
+
+  if (!hasInk) {
+    showStatus("請先在簽名區完成手寫簽名。", "error");
+    return;
+  }
+  if (!agree.checked) {
+    showStatus("請先勾選聲明確認欄位。", "error");
+    agree.focus();
+    return;
+  }
+
+  const receiptCanvas = createReceiptImage();
+  receiptCanvas.toBlob(blob => {
+    if (!blob) {
+      showStatus("無法產生圖檔，請重新整理後再試一次。", "error");
+      return;
+    }
+
+    const modeName = CONFIG.MODE === "receipt" ? "收訖確認" : "申領簽署";
+    const date = new Date().toISOString().slice(0, 10).replaceAll("-", "");
+    const filename = `數位禮券_${modeName}_${date}.png`;
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+    showStatus(
+      `圖檔已產生：${filename}\n請回到研究團隊提供的 Google 表單上傳此檔案。`,
+      "success"
+    );
+  }, "image/png");
+}
+
+canvas.addEventListener("pointerdown", startDrawing);
+canvas.addEventListener("pointermove", draw);
+canvas.addEventListener("pointerup", stopDrawing);
+canvas.addEventListener("pointercancel", stopDrawing);
+canvas.addEventListener("pointerleave", event => {
+  if (drawing) stopDrawing(event);
+});
+clearButton.addEventListener("click", clearSignature);
+downloadButton.addEventListener("click", downloadReceipt);
+window.addEventListener("resize", resizeCanvas);
+
+setupText();
+resizeCanvas();
+</script>
+</body>
+</html>
